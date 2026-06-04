@@ -1,0 +1,18 @@
+[package]
+name = "file_blinder_injector"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "file_blinder_injector"
+
+[dependencies]
+windows-sys = { version = "0.52.0", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Threading",
+] }
